@@ -36,9 +36,9 @@ data KULang where
   -- New Language Constructs for Sequencing
   Seq :: KULang -> KULang -> KULang
   -- New Language Constructs for storage
-  New :: KULang -> KULang                   -- create new storage location and store value of KULang
-  Deref :: KULang -> KULang                 -- get value stored at location
-  Set :: KULang -> KULang -> KULang         -- assign value of second
+  New :: KULang -> KULang
+  Deref :: KULang -> KULang
+  Set :: KULang -> KULang -> KULang
   deriving (Show,Eq)  
 
 data KULangExt where
@@ -88,18 +88,9 @@ type Store = (Loc, StoreFunc)
 deref :: StoreFunc -> Loc -> Maybe KULangVal
 deref s l = s l
 
-derefStore :: Store -> Loc -> Maybe KULangVal
-derefStore (i,s) l = deref s l
-
 set :: StoreFunc -> Loc -> KULangVal -> StoreFunc
 set s l v = 
    \m -> if m==l then (Just v) else s m
-
-setStore :: Store -> Loc -> KULangVal -> Store
-setStore (i,s) l v = (i, (set s l v))
-
-newStore :: Store -> KULangVal -> Store
-newStore (i,s) v = ((i+1), (set s i v))             -- returns new store with incremented location tracker and updated Store Function
 
 -- Initializers for StoreFunc, Store
 initStoreFunc :: StoreFunc
@@ -206,104 +197,133 @@ typeof c (Seq l r) =
         typeof c r;
     }
 -- New type rules for storage
-typeof c (New v) = fail "not implemented yet"
-typeof c (Deref v) = fail "not implemented yet"
-typeof c (Set l r) = fail "not implemented yet"
+typeof c (New v) = 
+    do {
+        v' <- typeof c v;
+        return TLoc;
+    }
+typeof c (Deref l) = 
+    do {
+        TLoc <- typeof c l;
+        return TTop;
+    }
+typeof c (Set l v) = 
+    do {
+        TLoc <- typeof c l;
+        typeof c v;
+    }
 
 -- Part 2 - Evaluation
-eval :: EnvVal -> KULang -> (Maybe KULangVal)
-eval e (Num x) = if x<0 then Nothing else return (NumV x)
-eval e (Boolean b) = return (BooleanV b)
-eval e (Plus l r) =
+eval :: Store -> EnvVal -> KULang -> (Maybe (Store, KULangVal))
+eval s e (Num x) = if x<0 then Nothing else return (s, (NumV x))
+eval s e (Boolean b) = return (s, (BooleanV b))
+eval s e (Plus l r) =
     do {
-        (NumV x) <- eval e l;
-        (NumV y) <- eval e r;
-        return (NumV (x+y));
+        (s', (NumV x)) <- eval s e l;
+        (s'', (NumV y)) <- eval s' e r;
+        return (s'', (NumV (x+y)));
     }
-eval e (Minus l r) =
+eval s e (Minus l r) =
     do {
-        (NumV x) <- eval e l;
-        (NumV y) <- eval e r;
+        (s', (NumV x)) <- eval s e l;
+        (s'', (NumV y)) <- eval s' e r;
         let ret = x-y in
-        if ret<0 then Nothing else return (NumV ret);
+        if ret<0 then Nothing else return (s'', (NumV ret));
     }
-eval e (Mult l r) =
+eval s e (Mult l r) =
     do {
-        (NumV x) <- eval e l;
-        (NumV y) <- eval e r;
-        return (NumV (x*y));
+        (s', (NumV x)) <- eval s e l;
+        (s'', (NumV y)) <- eval s' e r;
+        return (s'', (NumV (x*y)));
     }
-eval e (Div l r) =
+eval s e (Div l r) =
     do {
-        (NumV x) <- eval e l;
-        (NumV y) <- eval e r;
-        if y==0 then Nothing else return (NumV (quot x y));
+        (s', (NumV x)) <- eval s e l;
+        (s'', (NumV y)) <- eval s' e r;
+        if y==0 then Nothing else return (s'', (NumV (quot x y)));
     }
-eval e (Exp l r) =
+eval s e (Exp l r) =
     do {
-        (NumV x) <- eval e l;
-        (NumV y) <- eval e r;
-        return (NumV (x^y));
+        (s', (NumV x)) <- eval s e l;
+        (s'', (NumV y)) <- eval s' e r;
+        return (s'', (NumV (x^y)));
     }
-eval e (And l r) =  
+eval s e (And l r) =  
     do {
-        (BooleanV x) <- eval e l;
-        (BooleanV y) <- eval e r;
-        return (BooleanV (x&&y));
+        (s', (BooleanV x)) <- eval s e l;
+        (s'', (BooleanV y)) <- eval s' e r;
+        return (s'', (BooleanV (x&&y)));
     }
-eval e (Or l r) =  
+eval s e (Or l r) =  
     do {
-        (BooleanV x) <- eval e l;
-        (BooleanV y) <- eval e r;
-        return (BooleanV (x||y));
+        (s', (BooleanV x)) <- eval s e l;
+        (s'', (BooleanV y)) <- eval s' e r;
+        return (s'', (BooleanV (x||y)));
     }
-eval e (Leq l r) =  
+eval s e (Leq l r) =  
     do {
-        (NumV x) <- eval e l;
-        (NumV y) <- eval e r;
-        return (BooleanV (x<=y));
+        (s', (NumV x)) <- eval s e l;
+        (s'', (NumV y)) <- eval s' e r;
+        return (s'', (BooleanV (x<=y)));
     }
-eval e (IsZero v) = 
+eval s e (IsZero v) = 
     do {
-        (NumV v') <- eval e v;
-        return (BooleanV (v'==0));                 
+        (s', (NumV v')) <- eval s e v;
+        return (s', (BooleanV (v'==0)));                 
     }
-eval e (If c t e') =  
+eval s e (If c t e') =  
     do {
-        (BooleanV c') <- eval e c;
-        if c' then eval e t else eval e e';
+        (s', (BooleanV c')) <- eval s e c;
+        if c' then eval s' e t else eval s' e e';
     }
-eval e (Between a b c) =  
+eval s e (Between a b c) =  
     do {
-        (NumV x) <- eval e a;
-        (NumV y) <- eval e b;
-        (NumV z) <- eval e c;
-        return (BooleanV (x < y && y < z));
+        (s', (NumV x)) <- eval s e a;
+        (s'', (NumV y)) <- eval s' e b;
+        (s''', (NumV z)) <- eval s'' e c;
+        return (s''', (BooleanV (x < y && y < z)));
     }
-eval e (Id s) = lookup s e
-eval e (Lambda i t b) = return (ClosureV i b e);
-eval e (App f v) =
+eval s e (Id s') = 
     do {
-        (ClosureV i b e') <- eval e f;
-        v' <- eval e v;
-        eval ((i, v'):e') b
+        v <- lookup s' e;
+        return (s, v);
     }
-eval e (Fix f) = 
+eval s e (Lambda i t b) = return (s, (ClosureV i b e));
+eval s e (App f v) =
     do {
-        (ClosureV i b e') <- eval e f;
-        -- Question: should I use closure env or outside env?
-        eval e' (subst i (Fix (Lambda i TNum b)) b)
+        (s', (ClosureV i b e')) <- eval s e f;
+        (s'', v') <- eval s' e v;
+        eval s'' ((i, v'):e') b
+    }
+eval s e (Fix f) = 
+    do {
+        (s', (ClosureV i b e)) <- eval s e f;
+        eval s' e (subst i (Fix (Lambda i TNum b)) b)
     }
 -- New evaluation rules for sequencing
-eval e (Seq l r) =
+eval s e (Seq l r) =
     do {
-        eval e l;
-        eval e r;
+        (s', _) <- eval s e l;
+        eval s' e r;
     }
 -- New evaluation rules for storage
-eval e (New v) = fail "not implemented yet"
-eval e (Deref v) = fail "not implemented yet"
-eval e (Set l r) = fail "not implemented yet"
+eval s e (New v) =
+    do {
+        ((l, sFunc), v') <- eval s e v;
+        return ((l+1, (set sFunc l v')), (LocV l))
+    }
+eval s e (Deref l) = 
+    do {
+        ((l', sFunc), (LocV loc)) <- eval s e l;
+        v' <- deref sFunc loc;
+        return ((l', sFunc), v')
+    }
+eval s e (Set l v) =
+    do {
+        (s', (LocV loc)) <- eval s e l;
+        ((l', sFunc), v') <- eval s' e v;
+        return ((l', (set sFunc loc v')), v')
+    }
 
 -- Part 2.5 - Add Bind through Elaboration
 elabTerm :: KULangExt -> KULang 
@@ -365,4 +385,5 @@ interpret e =
     do
         let e' = elabTerm e
         t <- typeof [] e'
-        eval [] e'
+        (s, v) <- eval initStore [] e'
+        return v

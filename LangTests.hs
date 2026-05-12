@@ -491,7 +491,14 @@ compareLists list1 list2 = zipWith (==) list1 list2
 typeResults = (map (typeof []) testCases)
 typeDiff = compareLists typeResults typeResultsExpected
 
-evalResults = (map (eval []) testCases)
+testEval :: KULang -> Maybe KULangVal
+testEval x = 
+    do {
+        (s, v) <- eval initStore [] x;
+        return v
+    }
+
+evalResults = (map testEval testCases)
 evalDiff = compareLists evalResults evalResultsExpected
 
 elabResults = (map elabTerm testCasesExt)
