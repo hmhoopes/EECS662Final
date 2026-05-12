@@ -43,14 +43,19 @@ storage2_res = Just (NumV 43)
 storage2X = (BindX "x" TLoc (NewX (NumX 42)) (SeqX (SetX (IdX "x") (NumX 43)) (DerefX (IdX "x"))))
 storage2_interp = Just (NumV 43)
 
+storage3 = (App (Lambda "x" TLoc (Seq (Set (Id "x") (Num 43)) (Plus (Num 1) (Deref (Id "x"))))) (New (Num 42)))
+storage3_type = Just (TNum)
+storage3_res = Just (NumV 44)
+storage3X = (BindX "x" TLoc (NewX (NumX 42)) (SeqX (SetX (IdX "x") (NumX 43)) (PlusX (NumX 1) (DerefX (IdX "x")))))
+storage3_interp = Just (NumV 44)
 -- ============================================================================== --
 -- Code to run all tests and output results
 
-testCases = [seq1, seq2, seq3, storage1, storage2]
-typeResultsExpected = [seq1_type, seq2_type, seq3_type, storage1_type, storage2_type]
-evalResultsExpected = [seq1_res, seq2_res, seq3_res, storage1_res, storage2_res]
-testCasesExt = [seq1X, seq2X, seq3X, storage1X, storage2X]
-interpResultsExpected = [seq1_interp, seq2_interp, seq3_interp, storage1_interp, storage2_interp]
+testCases = [seq1, seq2, seq3, storage1, storage2, storage3]
+typeResultsExpected = [seq1_type, seq2_type, seq3_type, storage1_type, storage2_type, storage3_type]
+evalResultsExpected = [seq1_res, seq2_res, seq3_res, storage1_res, storage2_res, storage3_res]
+testCasesExt = [seq1X, seq2X, seq3X, storage1X, storage2X, storage3X]
+interpResultsExpected = [seq1_interp, seq2_interp, seq3_interp, storage1_interp, storage2_interp, storage3_interp]
 
 compareLists :: Eq a => [a] -> [a] -> [Bool]
 compareLists list1 list2 = zipWith (==) list1 list2
