@@ -5,6 +5,9 @@ module LangTests where
 
 import Lang
 
+-- ============================================================================== --
+-- Test cases for base
+
 fail_div = (Div (Num 1) (Num 0))
 fail_div_type = Just (TNum)
 fail_div_res = Nothing
@@ -304,10 +307,6 @@ lambda5_res = Just (ClosureV "x" ((IsZero (Minus (Id "x") (Num 2)))) [])
 lambda5X = (LambdaX "x" (TNum) (IsZeroX (MinusX (IdX "x") (NumX 2))))
 lambda5_interp = Just (ClosureV "x" ((IsZero (Minus (Id "x") (Num 2)))) [])
 
---previous
-    --lambda6 = (Lambda "f" (TClosure "a" ((:->:) TNum TNum) []) ((Id "f")))
-    --lambda6_type = Just (TClosure "f" ((:->:) (TClosure "a" ((:->:) TNum TNum) []) (TClosure "a" ((:->:) TNum TNum) [])) [])
---current
 lambda6 = (Lambda "f" ((:->:) TNum TNum) ((Id "f")))
 lambda6_type = Just ((:->:) ((:->:) TNum TNum) ((:->:) TNum TNum))
 lambda6_res = Just (ClosureV "f" ((Id "f")) [])
@@ -350,11 +349,6 @@ app6_res = Just (BooleanV True)
 app6X = (AppX lambda5X (NumX 2))
 app6_interp = Just (BooleanV True)
 
---previous:
-    --app6_fail = (Lambda "f" ((:->:) TNum TNum) (App (Id "f") (Num 2)))
-    --app6 = (Lambda "f" (TClosure "a" ((:->:) TNum TNum) []) (App (Id "f") (Num 2)) )
-    --app6_type = Just (TClosure "f" ((:->:) (TClosure "a" ((:->:) TNum TNum) []) TNum) [])
---current
 app7 = (Lambda "f" ((:->:) TNum TNum) (App (Id "f") (Num 2)))
 app7_type = Just ((:->:) ((:->:) TNum TNum) (TNum))
 app7_res = Just (ClosureV "f" (App (Id "f") (Num 2)) [])
@@ -436,6 +430,9 @@ testIsEven = interpret (
                     ))
                     (AppX (IdX "isEven") (NumX 67))) == 
                 Just (BooleanV False)
+
+-- ============================================================================== --
+-- Code to run all tests and output results
 
 testCases = [fail_div, fail_minus, fail_neg, fail_exp, plus, minus, mult, div1, div2, exp1, exp2, 
              exp3, combined1, combined2, combined3, combined4, combined5, fail_and, fail_and2,

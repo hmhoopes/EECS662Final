@@ -5,11 +5,14 @@ module Lang where
 
 import Control.Monad
 
+
+-- ============================================================================== --
+-- Language Abstract Syntax
+
 data KUTypeLang where
   TNum :: KUTypeLang
   TBool :: KUTypeLang
   (:->:) :: KUTypeLang -> KUTypeLang -> KUTypeLang
-  TClosure :: String -> KUTypeLang -> Cont -> KUTypeLang
   deriving (Show,Eq)
 
 data KULang where
@@ -30,6 +33,8 @@ data KULang where
   Leq :: KULang -> KULang -> KULang
   IsZero :: KULang -> KULang
   Fix :: KULang -> KULang
+  -- New Language Constructs for Sequencing
+  Seq :: KULang -> KULang -> KULang
   deriving (Show,Eq)  
 
 data KULangExt where
@@ -51,6 +56,8 @@ data KULangExt where
   LeqX :: KULangExt -> KULangExt -> KULangExt
   IsZeroX :: KULangExt -> KULangExt
   FixX :: KULangExt -> KULangExt
+  -- New Language Constructs (just extended)
+  SeqX :: KULangExt -> KULangExt -> KULangExt
   deriving (Show,Eq)
 
 data KULangVal where
@@ -62,6 +69,7 @@ data KULangVal where
 type EnvVal = [(String,KULangVal)]
 type Cont = [(String,KUTypeLang)]
 
+-- ============================================================================== --
 -- Reader & Helper Methods
 data Reader e a = Reader (e -> Maybe a)
 
@@ -105,7 +113,7 @@ instance Applicative (Reader e) where
 instance MonadFail (Reader e) where
   fail _ = Reader $ \_ -> Nothing
 
--- ========== Project Exercises ========== --
+-- ============================================================================== --
 
 -- Part 1 - Type Inference
 typeof :: KULang -> Reader Cont KUTypeLang
@@ -190,17 +198,10 @@ typeof (Lambda i t b) =
         cont <- ask;
         -- using the type t of identifier i, determine type of body
         b' <- local (useClosureType i t cont) (typeof b);
-
-        --previous, where we used TCurrent to track type of functions:
-            -- create TClosure with identifier, domain/range, context 
-            --return (TClosure i ((:->:) t b') cont);
-        --current, where we just use d and r
         return ((:->:) t b');
     }
 typeof (App f v) =
     do {
-        --previous, where we used TClosure to track type of functiosn
-            --(TClosure i ((:->:) d r) cont) <- typeof f;
         -- current, where we use ((:->:) d r) to track type of functions
         ((:->:) d r) <- typeof f;
         v' <- typeof v;
@@ -210,6 +211,12 @@ typeof (Fix f) =
     do {
         ((:->:) d r) <- typeof f;
         return r;
+    }
+-- New type rules for sequencing
+typeof (Seq l r) = 
+    do {
+        typeof l;
+        typeof r;
     }
 
 -- Part 2 - Evaluation
@@ -306,8 +313,12 @@ eval (Fix f) =
         --using subst:
             --type of lambda here doesn't matter, so just use TNum
         eval (subst i (Fix (Lambda i TNum b)) b)
-        --using defered subst
-        --local (useClosure i (Fix (Lambda i b))) (eval b);
+    }
+-- New evaluation rules for sequencing
+eval (Seq l r) =
+    do {
+        eval l;
+        eval r;
     }
 
 -- Part 2.5 - Add Bind through Elaboration
@@ -330,9 +341,9 @@ elabTerm (AppX f v) = (App (elabTerm f) (elabTerm v))
 elabTerm (IdX i) = (Id i)
 elabTerm (BindX i t v b) = (App (Lambda i t (elabTerm b)) (elabTerm v))
 elabTerm (FixX f) = (Fix (elabTerm f))
+elabTerm (SeqX l r) = (Seq (elabTerm l) (elabTerm r))
 
 -- Part 3 - Add the Fixed Point Operator
---     had to do this at function definitions, so nothing in this section
 
 -- Part 3.1 - Add subst function to use with fix
 subst :: String -> KULang -> KULang -> KULang
@@ -353,11 +364,10 @@ subst i v (Between a b c) = Between (subst i v a) (subst i v b) (subst i v c)
 subst i v (Lambda i' t b) = if i==i'
      then (Lambda i' t b)
      else (Lambda i' t (subst i v b))
--- fold like everything else
 subst i v (App f v') = App (subst i v f) (subst i v v')
 subst i v (Id i') = if i==i' then v else (Id i')
--- fold like everything 
 subst i v (Fix f) = Fix (subst i v f)
+subst i v (Seq l r) = Seq (subst i v l) (subst i v r)
 
 -- Part 4 - Interpretation
 interpret :: KULangExt -> Maybe KULangVal
