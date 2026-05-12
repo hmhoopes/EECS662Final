@@ -3,9 +3,6 @@
 -- allows this file to be treated as a module
 module Lang where
 
-import Control.Monad
-
-
 -- ============================================================================== --
 -- Language Abstract Syntax
 
@@ -86,50 +83,6 @@ type StoreFunc = Loc -> Maybe KULangVal
 type Store = (Loc, StoreFunc)
 
 -- ============================================================================== --
--- Reader & Helper Methods
-data Reader e a = Reader (e -> Maybe a)
-
-ask :: Reader a a 
-ask = Reader $ \e -> Just e
-
-runR :: Reader e a -> e -> Maybe a
-runR (Reader f) e = f e 
-
-local :: (e -> t) -> Reader t a -> Reader e a
-local f r = Reader $ \e -> runR r (f e)
-
-useClosure :: String -> KULangVal -> EnvVal -> EnvVal -> EnvVal
-useClosure i v e _ = (i,v):e
-
-useClosureType :: String -> KUTypeLang -> Cont -> Cont -> Cont
-useClosureType i t c _ = (i,t):c
-
-instance Monad (Reader e) where
-    g >>= f = Reader $ \e -> 
-        case runR g e of
-      Nothing -> Nothing
-      Just v  -> runR (f v) e
-
-instance Functor (Reader e) where
-    fmap f (Reader g) = Reader $ \e ->
-        case g e of
-        Nothing -> Nothing
-        Just v  -> Just (f v)
-
-instance Applicative (Reader e) where
-    pure x = Reader $ \e -> Just x
-    (Reader f) <*> (Reader g) = Reader $ \e ->
-        case f e of
-      Nothing -> Nothing
-      Just h  ->
-        case g e of
-          Nothing -> Nothing
-          Just x  -> Just (h x)
-
-instance MonadFail (Reader e) where
-  fail _ = Reader $ \_ -> Nothing
-
--- ============================================================================== --
 -- Storage helpers
 
 deref :: StoreFunc -> Loc -> Maybe KULangVal
@@ -154,228 +107,203 @@ initStoreFunc x = Nothing
 
 initStore :: Store
 initStore = (0,initStoreFunc)
-
--- New types for using with Readers during eval
-data EvalEnv = EvalEnv EnvVal Store
-
--- Update the reader's EvalEnv to use the new environment but maintain the same store
-useClosureEvalEnv :: String -> KULangVal -> EnvVal -> EvalEnv -> EvalEnv
-useClosureEvalEnv i v e (EvalEnv _ s) = EvalEnv ((i,v):e) s
 -- ============================================================================== --
 
 -- Part 1 - Type Inference
-typeof :: KULang -> Reader Cont KUTypeLang
-typeof (Num x) = if x>= 0 then return TNum else fail "negative"
-typeof (Boolean b) = return TBool
-typeof (Plus l r) =
+typeof :: Cont -> KULang -> (Maybe KUTypeLang) 
+typeof c (Num x) = if x>= 0 then return TNum else Nothing
+typeof c (Boolean b) = return TBool
+typeof c (Plus l r) =
     do {
-        TNum <- typeof l;
-        TNum <- typeof r;
+        TNum <- typeof c l;
+        TNum <- typeof c r;
         return TNum;
     }
-typeof (Minus l r) =
+typeof c (Minus l r) =
     do {
-        TNum <- typeof l;
-        TNum <- typeof r;
+        TNum <- typeof c l;
+        TNum <- typeof c r;
         return TNum;
     }
-typeof (Mult l r) =
+typeof c (Mult l r) =
     do {
-        TNum <- typeof l;
-        TNum <- typeof r;
+        TNum <- typeof c l;
+        TNum <- typeof c r;
         return TNum;
     }
-typeof (Div l r) =
+typeof c (Div l r) =
     do {
-        TNum <- typeof l;
-        TNum <- typeof r;
+        TNum <- typeof c l;
+        TNum <- typeof c r;
         return TNum;
     }
-typeof (Exp l r) =
+typeof c (Exp l r) =
     do {
-        TNum <- typeof l;
-        TNum <- typeof r;
+        TNum <- typeof c l;
+        TNum <- typeof c r;
         return TNum;
     }
-typeof (And l r) =  
+typeof c (And l r) =  
     do {
-        TBool <- typeof l;
-        TBool <- typeof r;
+        TBool <- typeof c l;
+        TBool <- typeof c r;
         return TBool;
     }
-typeof (Or l r) =  
+typeof c (Or l r) =  
     do {
-        TBool <- typeof l;
-        TBool <- typeof r;
+        TBool <- typeof c l;
+        TBool <- typeof c r;
         return TBool;
     }
-typeof (Leq l r) =  
+typeof c (Leq l r) =  
     do {
-        TNum <- typeof l;
-        TNum <- typeof r;
+        TNum <- typeof c l;
+        TNum <- typeof c r;
         return TBool;
     }
-typeof (IsZero v) = 
+typeof c (IsZero v) = 
     do {
-        TNum <- typeof v;
+        TNum <- typeof c v;
         return TBool;                        
     }
-typeof (If c t e) =  
+typeof c (If c' t e) =  
     do {
-        TBool <- typeof c;
-        t' <- typeof t; 
-        e' <- typeof e; 
-        if t' == e' then return t' else fail "mismatched if return values";
+        TBool <- typeof c c';
+        t' <- typeof c t; 
+        e' <- typeof c e; 
+        if t' == e' then return t' else Nothing
     }
-typeof (Between a b c) =  
+typeof c (Between a b c') =  
     do {
-        TNum <- typeof a;
-        TNum <- typeof b;
-        TNum <- typeof c;
+        TNum <- typeof c a;
+        TNum <- typeof c b;
+        TNum <- typeof c c';
         return TBool;
     }
-typeof (Id s) =
+typeof c (Id s) = lookup s c
+typeof c (Lambda i t b) = 
     do {
-        cont <- ask;
-        case (lookup s cont) of
-            Just x -> return x
-            Nothing -> fail "unbound variable"
-    }
-typeof (Lambda i t b) = 
-    do {
-        cont <- ask;
         -- using the type t of identifier i, determine type of body
-        b' <- local (useClosureType i t cont) (typeof b);
+        b' <- typeof ((i, t):c) b;
         return ((:->:) t b');
     }
-typeof (App f v) =
+typeof c (App f v) =
     do {
         -- current, where we use ((:->:) d r) to track type of functions
-        ((:->:) d r) <- typeof f;
-        v' <- typeof v;
-        if v'==d then return r else fail "mismatch actual type with formal type";
+        ((:->:) d r) <- typeof c f;
+        v' <- typeof c v;
+        if v'==d then return r else Nothing
     }
-typeof (Fix f) = 
+typeof c (Fix f) = 
     do {
-        ((:->:) d r) <- typeof f;
+        ((:->:) d r) <- typeof c f;
         return r;
     }
 -- New type rules for sequencing
-typeof (Seq l r) = 
+typeof c (Seq l r) = 
     do {
-        typeof l;
-        typeof r;
+        typeof c l;
+        typeof c r;
     }
 -- New type rules for storage
-typeof (New v) = fail "not implemented yet"
-typeof (Deref v) = fail "not implemented yet"
-typeof (Set l r) = fail "not implemented yet"
+typeof c (New v) = fail "not implemented yet"
+typeof c (Deref v) = fail "not implemented yet"
+typeof c (Set l r) = fail "not implemented yet"
 
 -- Part 2 - Evaluation
-eval :: KULang -> Reader EvalEnv KULangVal
-eval (Num x) = if x<0 then fail "negative number" else return (NumV x)
-eval (Boolean b) = return (BooleanV b)
-eval (Plus l r) =
+eval :: EnvVal -> KULang -> (Maybe KULangVal)
+eval e (Num x) = if x<0 then Nothing else return (NumV x)
+eval e (Boolean b) = return (BooleanV b)
+eval e (Plus l r) =
     do {
-        (NumV x) <- eval l;
-        (NumV y) <- eval r;
+        (NumV x) <- eval e l;
+        (NumV y) <- eval e r;
         return (NumV (x+y));
     }
-eval (Minus l r) =
+eval e (Minus l r) =
     do {
-        (NumV x) <- eval l;
-        (NumV y) <- eval r;
+        (NumV x) <- eval e l;
+        (NumV y) <- eval e r;
         let ret = x-y in
-        if ret<0 then fail "negative number" else return (NumV ret);
+        if ret<0 then Nothing else return (NumV ret);
     }
-eval (Mult l r) =
+eval e (Mult l r) =
     do {
-        (NumV x) <- eval l;
-        (NumV y) <- eval r;
+        (NumV x) <- eval e l;
+        (NumV y) <- eval e r;
         return (NumV (x*y));
     }
-eval (Div l r) =
+eval e (Div l r) =
     do {
-        (NumV x) <- eval l;
-        (NumV y) <- eval r;
-        if y==0 then fail "divide by 0" else return (NumV (quot x y));
+        (NumV x) <- eval e l;
+        (NumV y) <- eval e r;
+        if y==0 then Nothing else return (NumV (quot x y));
     }
-eval (Exp l r) =
+eval e (Exp l r) =
     do {
-        (NumV x) <- eval l;
-        (NumV y) <- eval r;
+        (NumV x) <- eval e l;
+        (NumV y) <- eval e r;
         return (NumV (x^y));
     }
-eval (And l r) =  
+eval e (And l r) =  
     do {
-        (BooleanV x) <- eval l;
-        (BooleanV y) <- eval r;
+        (BooleanV x) <- eval e l;
+        (BooleanV y) <- eval e r;
         return (BooleanV (x&&y));
     }
-eval (Or l r) =  
+eval e (Or l r) =  
     do {
-        (BooleanV x) <- eval l;
-        (BooleanV y) <- eval r;
+        (BooleanV x) <- eval e l;
+        (BooleanV y) <- eval e r;
         return (BooleanV (x||y));
     }
-eval (Leq l r) =  
+eval e (Leq l r) =  
     do {
-        (NumV x) <- eval l;
-        (NumV y) <- eval r;
+        (NumV x) <- eval e l;
+        (NumV y) <- eval e r;
         return (BooleanV (x<=y));
     }
-eval (IsZero v) = 
+eval e (IsZero v) = 
     do {
-        (NumV v') <- eval v;
+        (NumV v') <- eval e v;
         return (BooleanV (v'==0));                 
     }
-eval (If c t e) =  
+eval e (If c t e') =  
     do {
-        (BooleanV c') <- eval c;
-        if c' then eval t else eval e;
+        (BooleanV c') <- eval e c;
+        if c' then eval e t else eval e e';
     }
-eval (Between a b c) =  
+eval e (Between a b c) =  
     do {
-        (NumV x) <- eval a;
-        (NumV y) <- eval b;
-        (NumV z) <- eval c;
+        (NumV x) <- eval e a;
+        (NumV y) <- eval e b;
+        (NumV z) <- eval e c;
         return (BooleanV (x < y && y < z));
     }
-eval (Id s) =
+eval e (Id s) = lookup s e
+eval e (Lambda i t b) = return (ClosureV i b e);
+eval e (App f v) =
     do {
-        (EvalEnv env storage) <- ask;
-        case (lookup s env) of
-            Just x -> return x
-            Nothing -> fail "unbound variable"
+        (ClosureV i b e') <- eval e f;
+        v' <- eval e v;
+        eval ((i, v'):e') b
     }
-eval (Lambda i t b) = 
+eval e (Fix f) = 
     do {
-        (EvalEnv env storage) <- ask;
-        return (ClosureV i b env);
-    }
-eval (App f v) =
-    do {
-        (ClosureV i b e) <- eval f;
-        v' <- eval v;
-        local (useClosureEvalEnv i v' e) (eval b);
-    }
-eval (Fix f) = 
-    do {
-        (ClosureV i b e) <- eval f;
-        --using subst:
-            --type of lambda here doesn't matter, so just use TNum
-        eval (subst i (Fix (Lambda i TNum b)) b)
+        (ClosureV i b e') <- eval e f;
+        -- Question: should I use closure env or outside env?
+        eval e' (subst i (Fix (Lambda i TNum b)) b)
     }
 -- New evaluation rules for sequencing
-eval (Seq l r) =
+eval e (Seq l r) =
     do {
-        eval l;
-        eval r;
+        eval e l;
+        eval e r;
     }
 -- New evaluation rules for storage
-eval (New v) = fail "not implemented yet"
-eval (Deref v) = fail "not implemented yet"
-eval (Set l r) = fail "not implemented yet"
+eval e (New v) = fail "not implemented yet"
+eval e (Deref v) = fail "not implemented yet"
+eval e (Set l r) = fail "not implemented yet"
 
 -- Part 2.5 - Add Bind through Elaboration
 elabTerm :: KULangExt -> KULang 
@@ -433,9 +361,8 @@ subst i v (Set l r) = Set (subst i v l) (subst i v r)
 
 -- Part 4 - Interpretation
 interpret :: KULangExt -> Maybe KULangVal
--- not sure why, but had to use indentations instead of semicolon :/
-interpret e = 
+interpret e =
     do
         let e' = elabTerm e
-        t <- runR (typeof e') []    -- if type checking fails, returns nothing and early exits
-        runR (eval e') (EvalEnv [] initStore)
+        t <- typeof [] e'
+        eval [] e'

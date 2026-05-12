@@ -43,16 +43,10 @@ interpResultsExpected = [seq1_interp, seq2_interp, seq3_interp]
 compareLists :: Eq a => [a] -> [a] -> [Bool]
 compareLists list1 list2 = zipWith (==) list1 list2
 
-testTypeof :: KULang -> Maybe KUTypeLang
-testTypeof x = runR (typeof x) []
-
-typeResults = (map (testTypeof) testCases)
+typeResults = (map (typeof []) testCases)
 typeDiff = compareLists typeResults typeResultsExpected
 
-testEval :: KULang -> Maybe KULangVal
-testEval x = runR (eval x) (EvalEnv [] initStore)
-
-evalResults = (map (testEval) testCases)
+evalResults = (map (eval []) testCases)
 evalDiff = compareLists evalResults evalResultsExpected
 
 elabResults = (map elabTerm testCasesExt)
