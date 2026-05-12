@@ -50,7 +50,7 @@ typeResults = (map (testTypeof) testCases)
 typeDiff = compareLists typeResults typeResultsExpected
 
 testEval :: KULang -> Maybe KULangVal
-testEval x = runR (eval x) []
+testEval x = runR (eval x) (EvalEnv [] initStore)
 
 evalResults = (map (testEval) testCases)
 evalDiff = compareLists evalResults evalResultsExpected

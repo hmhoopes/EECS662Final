@@ -53,4 +53,4 @@ Additionally, there is automatic testing for the project. To test base functiona
 ## Questions
 **ASK BEFORE SUBMITTING**
 1. Double check that eval should return result of last step, typeof should return type of last step
-2. ...
+2. What should typechecking do for TTop returned by deref?

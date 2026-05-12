@@ -13,6 +13,9 @@ data KUTypeLang where
   TNum :: KUTypeLang
   TBool :: KUTypeLang
   (:->:) :: KUTypeLang -> KUTypeLang -> KUTypeLang
+  -- New Types for storage
+  TLoc :: KUTypeLang
+  TTop :: KUTypeLang
   deriving (Show,Eq)
 
 data KULang where
@@ -35,6 +38,10 @@ data KULang where
   Fix :: KULang -> KULang
   -- New Language Constructs for Sequencing
   Seq :: KULang -> KULang -> KULang
+  -- New Language Constructs for storage
+  New :: KULang -> KULang                   -- create new storage location and store value of KULang
+  Deref :: KULang -> KULang                 -- get value stored at location
+  Set :: KULang -> KULang -> KULang         -- assign value of second
   deriving (Show,Eq)  
 
 data KULangExt where
@@ -58,16 +65,25 @@ data KULangExt where
   FixX :: KULangExt -> KULangExt
   -- New Language Constructs (just extended)
   SeqX :: KULangExt -> KULangExt -> KULangExt
+  NewX :: KULangExt -> KULangExt
+  DerefX :: KULangExt -> KULangExt
+  SetX :: KULangExt -> KULangExt -> KULangExt
   deriving (Show,Eq)
 
 data KULangVal where
   NumV :: Int -> KULangVal
   BooleanV :: Bool -> KULangVal
   ClosureV :: String -> KULang -> EnvVal -> KULangVal
+  -- New Language Values for storage
+  LocV :: Int -> KULangVal
   deriving (Show,Eq)
 
 type EnvVal = [(String,KULangVal)]
 type Cont = [(String,KUTypeLang)]
+-- New constructs for storage
+type Loc = Int
+type StoreFunc = Loc -> Maybe KULangVal
+type Store = (Loc, StoreFunc)
 
 -- ============================================================================== --
 -- Reader & Helper Methods
@@ -113,6 +129,38 @@ instance Applicative (Reader e) where
 instance MonadFail (Reader e) where
   fail _ = Reader $ \_ -> Nothing
 
+-- ============================================================================== --
+-- Storage helpers
+
+deref :: StoreFunc -> Loc -> Maybe KULangVal
+deref s l = s l
+
+derefStore :: Store -> Loc -> Maybe KULangVal
+derefStore (i,s) l = deref s l
+
+set :: StoreFunc -> Loc -> KULangVal -> StoreFunc
+set s l v = 
+   \m -> if m==l then (Just v) else s m
+
+setStore :: Store -> Loc -> KULangVal -> Store
+setStore (i,s) l v = (i, (set s l v))
+
+newStore :: Store -> KULangVal -> Store
+newStore (i,s) v = ((i+1), (set s i v))             -- returns new store with incremented location tracker and updated Store Function
+
+-- Initializers for StoreFunc, Store
+initStoreFunc :: StoreFunc
+initStoreFunc x = Nothing
+
+initStore :: Store
+initStore = (0,initStoreFunc)
+
+-- New types for using with Readers during eval
+data EvalEnv = EvalEnv EnvVal Store
+
+-- Update the reader's EvalEnv to use the new environment but maintain the same store
+useClosureEvalEnv :: String -> KULangVal -> EnvVal -> EvalEnv -> EvalEnv
+useClosureEvalEnv i v e (EvalEnv _ s) = EvalEnv ((i,v):e) s
 -- ============================================================================== --
 
 -- Part 1 - Type Inference
@@ -218,9 +266,13 @@ typeof (Seq l r) =
         typeof l;
         typeof r;
     }
+-- New type rules for storage
+typeof (New v) = fail "not implemented yet"
+typeof (Deref v) = fail "not implemented yet"
+typeof (Set l r) = fail "not implemented yet"
 
 -- Part 2 - Evaluation
-eval :: KULang -> Reader EnvVal KULangVal
+eval :: KULang -> Reader EvalEnv KULangVal
 eval (Num x) = if x<0 then fail "negative number" else return (NumV x)
 eval (Boolean b) = return (BooleanV b)
 eval (Plus l r) =
@@ -291,21 +343,21 @@ eval (Between a b c) =
     }
 eval (Id s) =
     do {
-        env <- ask;
+        (EvalEnv env storage) <- ask;
         case (lookup s env) of
             Just x -> return x
             Nothing -> fail "unbound variable"
     }
 eval (Lambda i t b) = 
     do {
-        env <- ask;
+        (EvalEnv env storage) <- ask;
         return (ClosureV i b env);
     }
 eval (App f v) =
     do {
         (ClosureV i b e) <- eval f;
         v' <- eval v;
-        local (useClosure i v' e) (eval b);
+        local (useClosureEvalEnv i v' e) (eval b);
     }
 eval (Fix f) = 
     do {
@@ -320,6 +372,10 @@ eval (Seq l r) =
         eval l;
         eval r;
     }
+-- New evaluation rules for storage
+eval (New v) = fail "not implemented yet"
+eval (Deref v) = fail "not implemented yet"
+eval (Set l r) = fail "not implemented yet"
 
 -- Part 2.5 - Add Bind through Elaboration
 elabTerm :: KULangExt -> KULang 
@@ -342,6 +398,9 @@ elabTerm (IdX i) = (Id i)
 elabTerm (BindX i t v b) = (App (Lambda i t (elabTerm b)) (elabTerm v))
 elabTerm (FixX f) = (Fix (elabTerm f))
 elabTerm (SeqX l r) = (Seq (elabTerm l) (elabTerm r))
+elabTerm (NewX v) = (New (elabTerm v))
+elabTerm (DerefX v) = (Deref (elabTerm v))
+elabTerm (SetX l r) = (Set (elabTerm l) (elabTerm r))
 
 -- Part 3 - Add the Fixed Point Operator
 
@@ -368,6 +427,9 @@ subst i v (App f v') = App (subst i v f) (subst i v v')
 subst i v (Id i') = if i==i' then v else (Id i')
 subst i v (Fix f) = Fix (subst i v f)
 subst i v (Seq l r) = Seq (subst i v l) (subst i v r)
+subst i v (New v') = New (subst i v v')
+subst i v (Deref v') = Deref (subst i v v')
+subst i v (Set l r) = Set (subst i v l) (subst i v r)
 
 -- Part 4 - Interpretation
 interpret :: KULangExt -> Maybe KULangVal
@@ -376,4 +438,4 @@ interpret e =
     do
         let e' = elabTerm e
         t <- runR (typeof e') []    -- if type checking fails, returns nothing and early exits
-        runR (eval e') []
+        runR (eval e') (EvalEnv [] initStore)
