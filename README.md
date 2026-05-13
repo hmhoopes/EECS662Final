@@ -17,7 +17,7 @@ data KULang where
     Seq :: KULang -> KULang -> KULang
 ```
 
-For typeof:
+For `typeof`:
 ```haskell
 typeof :: Cont -> KULang -> (Maybe KUTypeLang) 
 ...
@@ -28,7 +28,7 @@ typeof (Seq l r) =
     }
 ```
 
-For eval:
+For `eval`:
 ```haskell
 eval :: Store -> EnvVal -> KULang -> (Maybe (Store, KULangVal))
 ...
@@ -64,7 +64,83 @@ data KULangVal where
     LocV :: Int -> KULangVal
 ```
 
-Helpers:
+Typing Helpers:
+```haskell
+-- Succeeds if t is the expected type OR TTop
+checkType :: KUTypeLang -> Maybe KUTypeLang -> Maybe KUTypeLang
+checkType expected (Just TTop) = Just expected
+checkType expected t =
+    do {
+        t' <- t;
+        if t' == expected then Just expected else Nothing
+    }
+```
+
+For `typeof`:
+```haskell
+typeof :: Cont -> KULang -> (Maybe KUTypeLang) 
+...
+typeof c (Plus l r) =
+    do {
+        checkType TNum (typeof c l);
+        checkType TNum (typeof c r);
+        return TNum;
+    }
+...
+typeof c (And l r) =  
+    do {
+        checkType TBool (typeof c l);
+        checkType TBool (typeof c r);
+        return TBool;
+    }
+...
+typeof c (If c' t e) =  
+    do {
+        checkType TBool (typeof c c');
+        t' <- typeof c t; 
+        e' <- typeof c e; 
+        -- if both match, return type. 
+        -- if either is TTop, assume it matches the other, so return the other's type.
+        -- if both don't match and aren't TTop, fail.
+        if (t' == e') then return t' else if (t' == TTop) then return e' else if (e' == TTop) then return t' else Nothing
+    }
+...
+typeof c (Lambda i t b) = 
+    do {
+        -- using the type t of identifier i, determine type of body
+        b' <- typeof ((i, t):c) b;
+        -- Prevent user from typing arguments as TTop, since it is only intended for use with storage 
+        -- and allowing it here would cause problems with type inference in function application
+        if t == TTop then Nothing else return ((:->:) t b');
+    }
+typeof c (App f v) =
+    do {
+        -- current, where we use ((:->:) d r) to track type of functions
+        ((:->:) d r) <- typeof c f;
+        v' <- typeof c v;
+        -- if actual is TTop, assume it matches formal
+        -- otherwise, check to see if they match, and if not fail
+        if (v' == TTop) then return r else if (v' == d) then return r else Nothing
+    }
+...
+typeof c (New v) = 
+    do {
+        v' <- typeof c v;
+        return TLoc;
+    }
+typeof c (Deref l) = 
+    do {
+        checkType TLoc (typeof c l);
+        return TTop;
+    }
+typeof c (Set l v) = 
+    do {
+        checkType TLoc (typeof c l);
+        typeof c v;
+    }
+```
+
+Storage Helpers:
 ```haskell
 type Loc = Int
 type StoreFunc = Loc -> Maybe KULangVal
@@ -84,28 +160,7 @@ initStore :: Store
 initStore = (0,initStoreFunc)
 ```
 
-For typeof:
-```haskell
-typeof :: Cont -> KULang -> (Maybe KUTypeLang) 
-...
-typeof c (New v) = 
-    do {
-        v' <- typeof c v;
-        return TLoc;
-    }
-typeof c (Deref l) = 
-    do {
-        TLoc <- typeof c l;
-        return TTop;
-    }
-typeof c (Set l v) = 
-    do {
-        TLoc <- typeof c l;
-        typeof c v;
-    }
-```
-
-For eval:
+For `eval`:
 ```haskell
 eval :: Store -> EnvVal -> KULang -> (Maybe (Store, KULangVal))
 ...
@@ -136,4 +191,4 @@ Additionally, there is automatic testing for the project. To test base functiona
 
 ## TODO
 ### Tasks
-1. Add examples, explanation to README.md
+1. Add examples to README.md
