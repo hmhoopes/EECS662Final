@@ -135,12 +135,5 @@ To run the project, run the command `ghci All.hs` in the main directory. Then, y
 Additionally, there is automatic testing for the project. To test base functionality (all functionality required by project 5), run `test` after running `ghci All.hs`. To test our added features, run `testFeat` after running `ghci All.hs`
 
 ## TODO
-### Questions
-**ASK BEFORE SUBMITTING**
-1. Double check that eval should return result of last step, typeof should return type of last step
-2. What should typechecking do for TTop returned by deref?
-3. Should we allow abstract syntax for LocV (similar to Num, Boolean)? Is it acceptable to have a testing version of it (for testing invalid locations)?
 ### Tasks
-1. Sort out typing
-2. Add more tests
-3. Add examples, explanation to README.md
+1. Add examples, explanation to README.md

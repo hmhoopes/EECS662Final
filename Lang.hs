@@ -98,6 +98,18 @@ initStoreFunc x = Nothing
 
 initStore :: Store
 initStore = (0,initStoreFunc)
+
+-- ============================================================================== --
+-- TTop Acceptance helper
+
+-- Succeeds if t is the expected type OR TTop
+checkType :: KUTypeLang -> Maybe KUTypeLang -> Maybe KUTypeLang
+checkType expected (Just TTop) = Just expected
+checkType expected t =
+    do {
+        t' <- t;
+        if t' == expected then Just expected else Nothing
+    }
 -- ============================================================================== --
 
 -- Part 1 - Type Inference
@@ -106,69 +118,72 @@ typeof c (Num x) = if x>= 0 then return TNum else Nothing
 typeof c (Boolean b) = return TBool
 typeof c (Plus l r) =
     do {
-        TNum <- typeof c l;
-        TNum <- typeof c r;
+        checkType TNum (typeof c l);
+        checkType TNum (typeof c r);
         return TNum;
     }
 typeof c (Minus l r) =
     do {
-        TNum <- typeof c l;
-        TNum <- typeof c r;
+        checkType TNum (typeof c l);
+        checkType TNum (typeof c r);
         return TNum;
     }
 typeof c (Mult l r) =
     do {
-        TNum <- typeof c l;
-        TNum <- typeof c r;
+        checkType TNum (typeof c l);
+        checkType TNum (typeof c r);
         return TNum;
     }
 typeof c (Div l r) =
     do {
-        TNum <- typeof c l;
-        TNum <- typeof c r;
+        checkType TNum (typeof c l);
+        checkType TNum (typeof c r);
         return TNum;
     }
 typeof c (Exp l r) =
     do {
-        TNum <- typeof c l;
-        TNum <- typeof c r;
+        checkType TNum (typeof c l);
+        checkType TNum (typeof c r);
         return TNum;
     }
 typeof c (And l r) =  
     do {
-        TBool <- typeof c l;
-        TBool <- typeof c r;
+        checkType TBool (typeof c l);
+        checkType TBool (typeof c r);
         return TBool;
     }
 typeof c (Or l r) =  
     do {
-        TBool <- typeof c l;
-        TBool <- typeof c r;
+        checkType TBool (typeof c l);
+        checkType TBool (typeof c r);
         return TBool;
     }
 typeof c (Leq l r) =  
     do {
-        TNum <- typeof c l;
-        TNum <- typeof c r;
+        checkType TNum (typeof c l);
+        checkType TNum (typeof c r);
         return TBool;
     }
 typeof c (IsZero v) = 
     do {
-        TNum <- typeof c v;
+        checkType TNum (typeof c v);
         return TBool;                        
     }
 typeof c (If c' t e) =  
     do {
-        TBool <- typeof c c';
+        checkType TBool (typeof c c');
         t' <- typeof c t; 
         e' <- typeof c e; 
-        if t' == e' then return t' else Nothing
+        -- if both match, return type. 
+        -- if either is TTop, assume it matches the other, so return the other's type.
+        -- if both don't match and aren't TTop, fail.
+        if (t' == e') then return t' else if (t' == TTop) then return e' else if (e' == TTop) then return t' else Nothing
     }
 typeof c (Between a b c') =  
     do {
-        TNum <- typeof c a;
-        TNum <- typeof c b;
-        TNum <- typeof c c';
+        checkType TNum (typeof c a);
+        checkType TNum (typeof c b);
+        checkType TNum (typeof c c');
         return TBool;
     }
 typeof c (Id s) = lookup s c
@@ -176,14 +191,18 @@ typeof c (Lambda i t b) =
     do {
         -- using the type t of identifier i, determine type of body
         b' <- typeof ((i, t):c) b;
-        return ((:->:) t b');
+        -- Prevent user from typing arguments as TTop, since it is only intended for use with storage 
+        -- and allowing it here would cause problems with type inference in function application
+        if t == TTop then Nothing else return ((:->:) t b');
     }
 typeof c (App f v) =
     do {
         -- current, where we use ((:->:) d r) to track type of functions
         ((:->:) d r) <- typeof c f;
         v' <- typeof c v;
-        if v'==d then return r else Nothing
+        -- if actual is TTop, assume it matches formal
+        -- otherwise, check to see if they match, and if not fail
+        if (v' == TTop) then return r else if (v' == d) then return r else Nothing
     }
 typeof c (Fix f) = 
     do {
@@ -204,12 +223,12 @@ typeof c (New v) =
     }
 typeof c (Deref l) = 
     do {
-        TLoc <- typeof c l;
+        checkType TLoc (typeof c l);
         return TTop;
     }
 typeof c (Set l v) = 
     do {
-        TLoc <- typeof c l;
+        checkType TLoc (typeof c l);
         typeof c v;
     }
 
